@@ -27,7 +27,7 @@ public class ImageResizer {
         return BitmapFactory.decodeResource(resources, resId, ops);
     }
 
-    public Bitmap decodeBitmp(FileDescriptor fileDescriptor, int reqWidth, int reqHeight) {
+    public Bitmap decodeBitmap(FileDescriptor fileDescriptor, int reqWidth, int reqHeight) {
         BitmapFactory.Options ops = new BitmapFactory.Options();
         ops.inJustDecodeBounds = true;
         BitmapFactory.decodeFileDescriptor(fileDescriptor, null, ops);

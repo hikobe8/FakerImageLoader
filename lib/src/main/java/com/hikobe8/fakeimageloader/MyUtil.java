@@ -9,9 +9,10 @@ import java.io.IOException;
 
 public class MyUtil {
 
-    public static void closeSliently(Closeable closeable){
+    public static void closeSilently(Closeable closeable){
         try {
-            closeable.close();
+            if (closeable != null)
+                closeable.close();
         } catch (IOException e) {
             e.printStackTrace();
         }

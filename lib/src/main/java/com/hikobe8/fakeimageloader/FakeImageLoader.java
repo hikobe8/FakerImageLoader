@@ -1,8 +1,9 @@
-package com.hikobe8.fakeimageloader.bitmap;
+package com.hikobe8.fakeimageloader;
 
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,9 +12,10 @@ import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.LruCache;
 import android.widget.ImageView;
-import com.hikobe8.fakeimageloader.LoadedResult;
-import com.hikobe8.fakeimageloader.MyUtil;
+
+import com.hikobe8.fakeimageloader.bitmap.ImageResizer;
 import com.hikobe8.fakeimageloader.cache.DiskLruCache;
+
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -21,12 +23,16 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -46,7 +52,6 @@ public class FakeImageLoader {
     private static final int MAX_POOL_SIZE = CPU_COUNT * 2 + 1;
     private static final Long KEEP_ALIVE = 10L;
     private static final ThreadFactory sThreadFactory = new ThreadFactory() {
-
         AtomicInteger mCount = new AtomicInteger(1);
 
         @Override
@@ -59,7 +64,7 @@ public class FakeImageLoader {
     private static final long DISK_CACHE_SIZE = 50 * 1024 * 1024;
     private static final int DISK_CACHE_INDEX = 0;
     private static final String TAG = "FakeImageLoader";
-    private static final int TAG_KEY_URI = 0x1;
+    private static final int TAG_KEY_URI = R.id.key_tag_id;
     private static final int MSG_OBJ_RESULT = 0x2;
     private static final int IO_BUFFER_SIZE = 8*1024;
     private boolean mIsDiskLruCacheCreated;
@@ -67,26 +72,75 @@ public class FakeImageLoader {
     private LruCache<String, Bitmap> mMemoryCache;
     private DiskLruCache mDiskLruCache;
     private ImageResizer mImageResizer;
-    private Handler mMainHandler = new Handler(Looper.getMainLooper()) {
+    private ImageLoaderHandler mMainHandler;
+
+    public void cancelAll() {
+        THREAD_POOL_EXECUTOR.shutdownNow();
+    }
+
+    public interface LoadListener {
+        void onLoadStart();
+
+        void onLoadCompletely(Bitmap bitmap);
+
+        void onLoadFailed();
+    }
+
+    private static class ImageLoaderHandler extends Handler {
+
+        private WeakReference<Context> mContextWeakReference;
+
+        public ImageLoaderHandler(Context context) {
+            super(Looper.getMainLooper());
+            mContextWeakReference = new WeakReference<>(context);
+        }
+
         @Override
         public void handleMessage(Message msg) {
             super.handleMessage(msg);
+            if (msg.what != MSG_OBJ_RESULT) {
+                return;
+            }
+            if (mContextWeakReference.get() == null)
+                return;
             LoadedResult loadedResult = (LoadedResult) msg.obj;
             final String url = (String) loadedResult.mImageView.getTag(TAG_KEY_URI);
             if (loadedResult.mUri.equals(url)) {
+                if (loadedResult.mBitmap == null) {
+                    if (loadedResult.mLoadListener != null) {
+                        loadedResult.mLoadListener.onLoadFailed();
+                        return;
+                    }
+                }
                 loadedResult.mImageView.setImageBitmap(loadedResult.mBitmap);
+                if (loadedResult.mLoadListener != null) {
+                    loadedResult.mLoadListener.onLoadCompletely(loadedResult.mBitmap);
+                }
             } else {
                 Log.w(TAG, "url has changed! ignore");
             }
         }
-    };
-    private Executor THREAD_POOL_EXECUTOR = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, KEEP_ALIVE,
+
+    }
+
+    private ExecutorService THREAD_POOL_EXECUTOR = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, KEEP_ALIVE,
             TimeUnit.SECONDS,
             sPoolWorkQueue,
             sThreadFactory);
 
+
+    /**
+     * build a new instance of ImageLoader
+     * @param context
+     * @return a new instance of ImageLoader
+     */
+    public static FakeImageLoader build(Context context) {
+        return new FakeImageLoader(context);
+    }
+
     private FakeImageLoader(Context context) {
         mContext = context.getApplicationContext();
+        mMainHandler = new ImageLoaderHandler(context);
         int maxMemory = (int) (Runtime.getRuntime().maxMemory() / 1024);
         int cacheSize = maxMemory / 8;
         mMemoryCache = new LruCache<String, Bitmap>(cacheSize) {
@@ -111,12 +165,21 @@ public class FakeImageLoader {
     }
 
     private long getUsableSpace(File diskCacheDir) {
-        return diskCacheDir.getFreeSpace() / 1024;
+        return diskCacheDir.getFreeSpace();
     }
 
-    private File getDiskCacheDir(Context context, String bitmap) {
-        File externalStorageDirectory = Environment.getExternalStorageDirectory();
-        return new File(externalStorageDirectory, bitmap);
+    private File getDiskCacheDir(Context context, String uniqueName) {
+
+        boolean externalStorageAvailable = Environment
+                .getExternalStorageState().equals(Environment.MEDIA_MOUNTED);
+        final String cachePath;
+        if (externalStorageAvailable) {
+            cachePath = context.getExternalCacheDir().getPath();
+        } else {
+            cachePath = context.getCacheDir().getPath();
+        }
+
+        return new File(cachePath + File.separator + uniqueName);
     }
 
     private void addBitmapToMemoryCache(String key, Bitmap bitmap) {
@@ -168,7 +231,7 @@ public class FakeImageLoader {
         if (snapshot != null) {
             FileInputStream inputStream = (FileInputStream) snapshot.getInputStream(DISK_CACHE_INDEX);
             FileDescriptor fd = inputStream.getFD();
-            bitmap = mImageResizer.decodeBitmp(fd, reqWidth, reqHeight);
+            bitmap = mImageResizer.decodeBitmap(fd, reqWidth, reqHeight);
             if (bitmap != null) {
                 addBitmapToMemoryCache(key, bitmap);
             }
@@ -198,7 +261,7 @@ public class FakeImageLoader {
             if (httpURLConnection != null){
                 httpURLConnection.disconnect();
             }
-            MyUtil.closeSliently(bufferedInputStream);
+            MyUtil.closeSilently(bufferedInputStream);
         }
         return false;
     }
@@ -240,19 +303,36 @@ public class FakeImageLoader {
                 Log.d(TAG, "load bitmap from disk cache, url = " + url);
                 return bitmap;
             }
-            bitmap = loadBitmapFromHttp(url, reqWidth, reqHeight);
+            if (url.startsWith("file://")) {
+                bitmap = loadBitmapLocal(url, reqWidth, reqHeight);
+            } else {
+                bitmap = loadBitmapFromHttp(url, reqWidth, reqHeight);
+            }
             Log.d(TAG, "load bitmap from http, url = " + url);
         } catch (IOException e) {
             e.printStackTrace();
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
         }
         if (bitmap == null && !mIsDiskLruCacheCreated) {
-            Log.w(TAG, "encouter Error, DiskLruCache is not created.");
+            Log.w(TAG, "Encounter Error, DiskLruCache is not created.");
             bitmap = downloadBitmapFromUrl(url);
         }
         return bitmap;
     }
 
+    private Bitmap loadBitmapLocal(String url, int reqWidth, int reqHeight) throws IOException, URISyntaxException {
+        URI uri = new URI(url);
+        url = uri.getPath();
+        FileInputStream fileInputStream = new FileInputStream(url);
+        FileDescriptor fd = fileInputStream.getFD();
+        return mImageResizer.decodeBitmap(fd, reqWidth, reqHeight);
+    }
+
     private Bitmap downloadBitmapFromUrl(String uri) {
+        if (!uri.startsWith("http://")){
+            return null;
+        }
         HttpURLConnection httpURLConnection =  null;
         BufferedInputStream bufferedInputStream = null;
         Bitmap bitmap = null;
@@ -268,17 +348,20 @@ public class FakeImageLoader {
             if (httpURLConnection != null){
                 httpURLConnection.disconnect();
             }
-            MyUtil.closeSliently(bufferedInputStream);
+            MyUtil.closeSilently(bufferedInputStream);
         }
         return bitmap;
     }
 
-    public void display(final String url, final ImageView imageview, final int reqWidth, final int reqHeight) {
+    public void display(final String url, final ImageView imageview, final int reqWidth, final int reqHeight, LoadListener loadListener) {
         imageview.setTag(TAG_KEY_URI, url);
         Bitmap bitmap = loadBitmapFromMemoryCache(url);
         if (bitmap != null) {
             imageview.setImageBitmap(bitmap);
             return;
+        }
+        if (loadListener != null) {
+            loadListener.onLoadStart();
         }
         final Runnable loadBitmapTask = new Runnable() {
             @Override

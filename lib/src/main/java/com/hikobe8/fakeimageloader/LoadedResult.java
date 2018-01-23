@@ -11,6 +11,7 @@ import android.widget.ImageView;
 
 public class LoadedResult implements Parcelable {
 
+    public FakeImageLoader.LoadListener mLoadListener;
     public ImageView mImageView;
     public String mUri;
     public Bitmap mBitmap;
@@ -26,6 +27,17 @@ public class LoadedResult implements Parcelable {
         mBitmap = in.readParcelable(Bitmap.class.getClassLoader());
     }
 
+    @Override
+    public void writeToParcel(Parcel dest, int flags) {
+        dest.writeString(mUri);
+        dest.writeParcelable(mBitmap, flags);
+    }
+
+    @Override
+    public int describeContents() {
+        return 0;
+    }
+
     public static final Creator<LoadedResult> CREATOR = new Creator<LoadedResult>() {
         @Override
         public LoadedResult createFromParcel(Parcel in) {
@@ -37,15 +49,4 @@ public class LoadedResult implements Parcelable {
             return new LoadedResult[size];
         }
     };
-
-    @Override
-    public int describeContents() {
-        return 0;
-    }
-
-    @Override
-    public void writeToParcel(Parcel dest, int flags) {
-        dest.writeString(mUri);
-        dest.writeParcelable(mBitmap, flags);
-    }
 }
