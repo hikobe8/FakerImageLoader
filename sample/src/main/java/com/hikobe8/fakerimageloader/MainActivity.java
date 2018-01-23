@@ -25,7 +25,7 @@ public class MainActivity extends AppCompatActivity implements PhotoLoader.OnPho
             @Override
             public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
                 super.onScrollStateChanged(recyclerView, newState);
-//                mPhotoAdapter.notifyPreventImageLoading(newState != RecyclerView.SCROLL_STATE_IDLE);
+                mPhotoAdapter.notifyPreventImageLoading(newState != RecyclerView.SCROLL_STATE_IDLE);
             }
         });
         mRecyclerView.setLayoutManager(new GridLayoutManager(this, 3));

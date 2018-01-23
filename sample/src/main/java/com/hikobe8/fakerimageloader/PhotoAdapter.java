@@ -1,8 +1,8 @@
 package com.hikobe8.fakerimageloader;
 
 import android.content.Context;
-import android.graphics.Bitmap;
 import android.support.v7.widget.RecyclerView;
+import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -45,6 +45,7 @@ public class PhotoAdapter extends RecyclerView.Adapter<PhotoAdapter.MViewHolder>
 
     public void notifyPreventImageLoading(boolean prevent) {
         mShouldPreventImageLoading = prevent;
+        notifyDataSetChanged();
     }
 
     public class MViewHolder extends RecyclerView.ViewHolder{
@@ -56,27 +57,16 @@ public class PhotoAdapter extends RecyclerView.Adapter<PhotoAdapter.MViewHolder>
             mSquareImageView = (SquareImageView) itemView;
         }
 
-        public void bindData(String path){
-            if (mShouldPreventImageLoading) {
-                mFakeImageLoader.cancelAll();
-                return;
+        public void bindData(final String path){
+            String tagPath = (String) mSquareImageView.getTag();
+            if (!TextUtils.equals(tagPath, path)) {
+                mSquareImageView.setImageResource(R.drawable.default_loading_bg);
+                if (mShouldPreventImageLoading) {
+                    return;
+                }
+                mSquareImageView.setTag(path);
+                mFakeImageLoader.display(path, mSquareImageView, 100, 100);
             }
-            mFakeImageLoader.display(path, mSquareImageView, 100, 100, new FakeImageLoader.LoadListener() {
-                @Override
-                public void onLoadStart() {
-                    mSquareImageView.setImageBitmap(null);
-                }
-
-                @Override
-                public void onLoadCompletely(Bitmap bitmap) {
-
-                }
-
-                @Override
-                public void onLoadFailed() {
-
-                }
-            });
         }
 
     }

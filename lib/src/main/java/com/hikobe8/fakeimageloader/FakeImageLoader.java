@@ -75,7 +75,7 @@ public class FakeImageLoader {
     private ImageLoaderHandler mMainHandler;
 
     public void cancelAll() {
-        THREAD_POOL_EXECUTOR.shutdownNow();
+        THREAD_POOL_EXECUTOR.shutdown();
     }
 
     public interface LoadListener {
@@ -351,6 +351,10 @@ public class FakeImageLoader {
             MyUtil.closeSilently(bufferedInputStream);
         }
         return bitmap;
+    }
+
+    public void display(String url, ImageView imageView, int reqWidth, int reqHeight) {
+        display(url, imageView, reqWidth, reqHeight, null);
     }
 
     public void display(final String url, final ImageView imageview, final int reqWidth, final int reqHeight, LoadListener loadListener) {
