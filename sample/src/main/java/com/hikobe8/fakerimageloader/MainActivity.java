@@ -21,13 +21,6 @@ public class MainActivity extends AppCompatActivity implements PhotoLoader.OnPho
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         mRecyclerView = (RecyclerView) findViewById(R.id.recycler);
-        mRecyclerView.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrollStateChanged(RecyclerView recyclerView, int newState) {
-                super.onScrollStateChanged(recyclerView, newState);
-                mPhotoAdapter.notifyPreventImageLoading(newState != RecyclerView.SCROLL_STATE_IDLE);
-            }
-        });
         mRecyclerView.setLayoutManager(new GridLayoutManager(this, 3));
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
